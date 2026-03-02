@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StopMotion-ify - コマ撮り風に変換</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --red: #D01012;
+  --yellow: #F5CD2F;
+  --blue: #0057A6;
+  --green: #00852B;
+  --dark: #1a1a1a;
+  --gray: #f5f5f5;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--gray);
+  color: var(--dark);
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+header {
+  background: var(--red);
+  color: white;
+  width: 100%;
+  padding: 1.2rem;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+header h1 {
+  font-size: 1.6rem;
+  letter-spacing: 0.02em;
+}
+
+header p {
+  font-size: 0.9rem;
+  opacity: 0.9;
+  margin-top: 0.3rem;
+}
+
+main {
+  width: 100%;
+  max-width: 640px;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Drop zone */
+#drop-zone {
+  border: 3px dashed #ccc;
+  border-radius: 16px;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: white;
+}
+
+#drop-zone.dragover {
+  border-color: var(--blue);
+  background: #e8f0fe;
+}
+
+#drop-zone.has-video {
+  padding: 0;
+  border-style: solid;
+  border-color: #ddd;
+  overflow: hidden;
+}
+
+#drop-zone .placeholder {
+  color: #888;
+}
+
+#drop-zone .placeholder .icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+#drop-zone .placeholder .sub {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-top: 0.4rem;
+}
+
+#video-preview {
+  width: 100%;
+  display: none;
+  border-radius: 13px;
+}
+
+#file-input {
+  display: none;
+}
+
+/* Convert button */
+#convert-btn {
+  background: var(--blue);
+  color: white;
+  border: none;
+  padding: 1rem;
+  border-radius: 12px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  display: none;
+}
+
+#convert-btn:hover { background: #004a8f; }
+#convert-btn:active { transform: scale(0.98); }
+#convert-btn:disabled {
+  background: #aaa;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Progress */
+#progress-section {
+  display: none;
+}
+
+#progress-bar-bg {
+  background: #ddd;
+  border-radius: 8px;
+  height: 12px;
+  overflow: hidden;
+}
+
+#progress-bar {
+  background: linear-gradient(90deg, var(--yellow), var(--green));
+  height: 100%;
+  width: 0%;
+  border-radius: 8px;
+  transition: width 0.15s;
+}
+
+#progress-text {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #666;
+  margin-top: 0.4rem;
+}
+
+/* Result */
+#result-section {
+  display: none;
+  text-align: center;
+}
+
+#result-preview {
+  width: 100%;
+  border-radius: 12px;
+  background: #000;
+  margin-bottom: 1rem;
+}
+
+.download-btns {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.download-btns a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.8rem 1.5rem;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 1rem;
+  text-decoration: none;
+  color: white;
+  transition: transform 0.1s;
+}
+
+.download-btns a:active { transform: scale(0.97); }
+
+#dl-mp4 { background: var(--green); }
+#dl-gif { background: var(--red); }
+
+#reset-btn {
+  margin-top: 0.8rem;
+  background: none;
+  border: 2px solid #ccc;
+  border-radius: 10px;
+  padding: 0.6rem 1.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: #666;
+}
+
+#reset-btn:hover { border-color: #999; color: #333; }
+
+/* Canvas (hidden) */
+#work-canvas { display: none; }
+
+footer {
+  margin-top: auto;
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: #aaa;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>StopMotion-ify</h1>
+  <p>動画をワンタップでコマ撮り風に変換</p>
+</header>
+
+<main>
+  <div id="drop-zone">
+    <div class="placeholder">
+      <span class="icon">🎬</span>
+      <div>動画ファイルをドロップ<br>またはタップして選択</div>
+      <div class="sub">MP4 / MOV / WebM 対応</div>
+    </div>
+    <video id="video-preview" playsinline muted></video>
+  </div>
+  <input type="file" id="file-input" accept="video/*">
+
+  <button id="convert-btn">コマ撮りに変換！</button>
+
+  <div id="progress-section">
+    <div id="progress-bar-bg"><div id="progress-bar"></div></div>
+    <div id="progress-text">準備中...</div>
+  </div>
+
+  <div id="result-section">
+    <video id="result-preview" playsinline loop muted autoplay></video>
+    <div class="download-btns">
+      <a id="dl-mp4" download="stopmotion.webm">MP4をダウンロード</a>
+      <a id="dl-gif" download="stopmotion.gif">GIFをダウンロード</a>
+    </div>
+    <button id="reset-btn">別の動画を変換する</button>
+  </div>
+</main>
+
+<canvas id="work-canvas"></canvas>
+
+<footer>
+  StopMotion-ify &mdash; ブラウザで完結、動画はアップロードされません
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+<script>
+'use strict';
+
+const $ = s => document.querySelector(s);
+const dropZone = $('#drop-zone');
+const fileInput = $('#file-input');
+const videoPreview = $('#video-preview');
+const convertBtn = $('#convert-btn');
+const progressSection = $('#progress-section');
+const progressBar = $('#progress-bar');
+const progressText = $('#progress-text');
+const resultSection = $('#result-section');
+const resultPreview = $('#result-preview');
+const dlMp4 = $('#dl-mp4');
+const dlGif = $('#dl-gif');
+const resetBtn = $('#reset-btn');
+const canvas = $('#work-canvas');
+const ctx = canvas.getContext('2d');
+
+const STOP_MOTION_FPS = 8;
+const JITTER_PX = 2;
+
+let videoFile = null;
+
+// --- File input ---
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => { if (e.target.files[0]) loadVideo(e.target.files[0]); });
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('video/')) loadVideo(file);
+});
+
+function loadVideo(file) {
+  videoFile = file;
+  const url = URL.createObjectURL(file);
+  videoPreview.src = url;
+  videoPreview.style.display = 'block';
+  videoPreview.load();
+  dropZone.querySelector('.placeholder').style.display = 'none';
+  dropZone.classList.add('has-video');
+  convertBtn.style.display = 'block';
+  resultSection.style.display = 'none';
+}
+
+// --- Convert ---
+convertBtn.addEventListener('click', startConversion);
+
+async function startConversion() {
+  convertBtn.disabled = true;
+  progressSection.style.display = 'block';
+  resultSection.style.display = 'none';
+  setProgress(0, 'フレームを抽出中...');
+
+  try {
+    const frames = await extractFrames(videoPreview);
+    setProgress(50, 'コマ撮り動画を生成中...');
+
+    const [webmBlob, gifBlob] = await Promise.all([
+      encodeWebM(frames),
+      encodeGIF(frames),
+    ]);
+
+    showResult(webmBlob, gifBlob);
+  } catch (err) {
+    progressText.textContent = 'エラーが発生しました: ' + err.message;
+    console.error(err);
+  } finally {
+    convertBtn.disabled = false;
+  }
+}
+
+function setProgress(pct, text) {
+  progressBar.style.width = pct + '%';
+  if (text) progressText.textContent = text;
+}
+
+// --- Frame extraction ---
+function extractFrames(video) {
+  return new Promise((resolve, reject) => {
+    const tempVideo = document.createElement('video');
+    tempVideo.muted = true;
+    tempVideo.playsInline = true;
+    tempVideo.preload = 'auto';
+    tempVideo.src = video.src;
+
+    tempVideo.addEventListener('loadedmetadata', async () => {
+      const duration = tempVideo.duration;
+      if (!duration || !isFinite(duration)) {
+        reject(new Error('動画の長さを取得できませんでした'));
+        return;
+      }
+
+      const w = tempVideo.videoWidth;
+      const h = tempVideo.videoHeight;
+      canvas.width = w;
+      canvas.height = h;
+
+      const interval = 1 / STOP_MOTION_FPS;
+      const times = [];
+      for (let t = 0; t < duration; t += interval) {
+        times.push(t);
+      }
+
+      const frames = [];
+      for (let i = 0; i < times.length; i++) {
+        await seekTo(tempVideo, times[i]);
+
+        // Apply jitter
+        const jx = (Math.random() - 0.5) * 2 * JITTER_PX;
+        const jy = (Math.random() - 0.5) * 2 * JITTER_PX;
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(tempVideo, jx, jy, w, h);
+
+        // Store as ImageData
+        frames.push({
+          data: ctx.getImageData(0, 0, w, h),
+          width: w,
+          height: h,
+        });
+
+        const pct = Math.round((i / times.length) * 50);
+        setProgress(pct, `フレーム抽出中... ${i + 1} / ${times.length}`);
+      }
+
+      resolve(frames);
+    });
+
+    tempVideo.addEventListener('error', () => reject(new Error('動画の読み込みに失敗しました')));
+  });
+}
+
+function seekTo(video, time) {
+  return new Promise(resolve => {
+    const onSeeked = () => {
+      video.removeEventListener('seeked', onSeeked);
+      // Small delay to ensure frame is rendered
+      setTimeout(resolve, 20);
+    };
+    video.addEventListener('seeked', onSeeked);
+    video.currentTime = time;
+  });
+}
+
+// --- WebM encode ---
+function encodeWebM(frames) {
+  return new Promise((resolve, reject) => {
+    const w = frames[0].width;
+    const h = frames[0].height;
+    canvas.width = w;
+    canvas.height = h;
+
+    const stream = canvas.captureStream(0);
+    const track = stream.getVideoTracks()[0];
+
+    // Try VP9 first, fall back to VP8
+    let mimeType = 'video/webm;codecs=vp9';
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'video/webm;codecs=vp8';
+    }
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      mimeType = 'video/webm';
+    }
+
+    const recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: 4_000_000,
+    });
+
+    const chunks = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+    recorder.onstop = () => resolve(new Blob(chunks, { type: 'video/webm' }));
+    recorder.onerror = e => reject(e.error || new Error('Recording failed'));
+
+    recorder.start();
+
+    let idx = 0;
+    const frameDuration = 1000 / STOP_MOTION_FPS;
+
+    function drawNext() {
+      if (idx >= frames.length) {
+        recorder.stop();
+        return;
+      }
+
+      ctx.putImageData(frames[idx].data, 0, 0);
+      if (track.requestFrame) track.requestFrame();
+
+      const pct = 50 + Math.round((idx / frames.length) * 25);
+      setProgress(pct, `MP4生成中... ${idx + 1} / ${frames.length}`);
+
+      idx++;
+      setTimeout(drawNext, frameDuration);
+    }
+
+    drawNext();
+  });
+}
+
+// --- GIF encode ---
+function encodeGIF(frames) {
+  return new Promise((resolve, reject) => {
+    const w = frames[0].width;
+    const h = frames[0].height;
+
+    // Scale down for GIF if too large (max 480px width)
+    const maxW = 480;
+    const scale = w > maxW ? maxW / w : 1;
+    const gw = Math.round(w * scale);
+    const gh = Math.round(h * scale);
+
+    const gif = new GIF({
+      workers: 2,
+      quality: 10,
+      width: gw,
+      height: gh,
+      workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js',
+    });
+
+    // Use a temp canvas for scaling
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = gw;
+    tempCanvas.height = gh;
+    const tempCtx = tempCanvas.getContext('2d');
+
+    for (let i = 0; i < frames.length; i++) {
+      // Put original frame on main canvas
+      canvas.width = w;
+      canvas.height = h;
+      ctx.putImageData(frames[i].data, 0, 0);
+
+      // Scale to temp canvas
+      tempCtx.clearRect(0, 0, gw, gh);
+      tempCtx.drawImage(canvas, 0, 0, gw, gh);
+
+      gif.addFrame(tempCtx.getImageData(0, 0, gw, gh), { delay: 1000 / STOP_MOTION_FPS });
+    }
+
+    gif.on('progress', p => {
+      const pct = 75 + Math.round(p * 25);
+      setProgress(pct, `GIF生成中... ${Math.round(p * 100)}%`);
+    });
+
+    gif.on('finished', blob => resolve(blob));
+    gif.render();
+  });
+}
+
+// --- Result ---
+function showResult(webmBlob, gifBlob) {
+  setProgress(100, '完了！');
+
+  const webmUrl = URL.createObjectURL(webmBlob);
+  const gifUrl = URL.createObjectURL(gifBlob);
+
+  resultPreview.src = webmUrl;
+  resultPreview.style.display = 'block';
+  resultPreview.play();
+
+  dlMp4.href = webmUrl;
+  dlGif.href = gifUrl;
+
+  resultSection.style.display = 'block';
+  progressSection.style.display = 'none';
+}
+
+// --- Reset ---
+resetBtn.addEventListener('click', () => {
+  videoPreview.src = '';
+  videoPreview.style.display = 'none';
+  dropZone.querySelector('.placeholder').style.display = '';
+  dropZone.classList.remove('has-video');
+  convertBtn.style.display = 'none';
+  resultSection.style.display = 'none';
+  progressSection.style.display = 'none';
+  resultPreview.src = '';
+  fileInput.value = '';
+  videoFile = null;
+});
+</script>
+</body>
+</html>
