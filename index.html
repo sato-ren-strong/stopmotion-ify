@@ -290,8 +290,10 @@ const resetBtn = $('#reset-btn');
 const canvas = $('#work-canvas');
 const ctx = canvas.getContext('2d');
 
-const STOP_MOTION_FPS = 8;
-const JITTER_PX = 2;
+const STOP_MOTION_FPS = 6;
+const JITTER_PX = 4;
+const ROTATION_JITTER_DEG = 0.3;
+const BRIGHTNESS_FLICKER = 0.08; // ±8% brightness variation
 
 let videoFile = null;
 
@@ -383,12 +385,28 @@ function extractFrames(video) {
       for (let i = 0; i < times.length; i++) {
         await seekTo(tempVideo, times[i]);
 
-        // Apply jitter
+        // Apply stop-motion artifacts
         const jx = (Math.random() - 0.5) * 2 * JITTER_PX;
         const jy = (Math.random() - 0.5) * 2 * JITTER_PX;
+        const angle = (Math.random() - 0.5) * 2 * ROTATION_JITTER_DEG * Math.PI / 180;
+        const brightness = 1 + (Math.random() - 0.5) * 2 * BRIGHTNESS_FLICKER;
 
         ctx.clearRect(0, 0, w, h);
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        ctx.rotate(angle);
+        ctx.translate(-w / 2, -h / 2);
         ctx.drawImage(tempVideo, jx, jy, w, h);
+        // Brightness flicker overlay
+        ctx.globalCompositeOperation = brightness > 1 ? 'lighter' : 'multiply';
+        const flickerVal = brightness > 1
+          ? Math.round((brightness - 1) * 255)
+          : Math.round(brightness * 255);
+        ctx.fillStyle = brightness > 1
+          ? `rgb(${flickerVal},${flickerVal},${flickerVal})`
+          : `rgb(${flickerVal},${flickerVal},${flickerVal})`;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
 
         // Store as ImageData
         frames.push({
