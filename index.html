@@ -261,6 +261,19 @@ footer {
 <script>
 'use strict';
 
+// Preload gif.worker.js as Blob URL to avoid cross-origin Worker error
+let gifWorkerBlobUrl = null;
+(async () => {
+  try {
+    const res = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
+    const text = await res.text();
+    const blob = new Blob([text], { type: 'application/javascript' });
+    gifWorkerBlobUrl = URL.createObjectURL(blob);
+  } catch (e) {
+    console.warn('Failed to preload gif worker:', e);
+  }
+})();
+
 const $ = s => document.querySelector(s);
 const dropZone = $('#drop-zone');
 const fileInput = $('#file-input');
@@ -479,7 +492,7 @@ function encodeGIF(frames) {
       quality: 10,
       width: gw,
       height: gh,
-      workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js',
+      workerScript: gifWorkerBlobUrl,
     });
 
     // Use a temp canvas for scaling
